@@ -10,9 +10,9 @@ Designed to be hosted safely in a **public repository** with zero secrets commit
 
 | App | Description | Data Source | Auth Required? |
 |---|---|---|---|
-| **Bitcoin** (`apps/bitcoin/`) | Live BTC/USD spot price, 24h change %, and visual 24h high/low range bar | Coinbase API | ❌ None |
-| **Stocks** (`apps/stocks/`) | Real-time stock / ETF price, daily % change, and daily range bar (configurable ticker) | Yahoo Finance | ❌ None |
-| **GitHub Repos** (`apps/github/`) | Status dashboard for key repos: CI build pass/fail, star count, forks, open issues. Cycles through multiple repos. | GitHub REST API | Optional (for private repos or higher limits) |
+| **Bitcoin** (`apps/bitcoin/`) | Live BTC/USD price with trend charts, cycling between 24H and 30D (`period=24H` or `30D` to pin one) | Coinbase API | ❌ None |
+| **Stocks** (`apps/stocks/`) | Price, daily $/% change, and intraday line chart vs. previous close. Cycles through multiple tickers (default `COMP,XYZ`) | Yahoo Finance | ❌ None |
+| **GitHub Repos** (`apps/github/`) | Status dashboard for key repos: CI pass/fail on `main`, stars, forks, and open PR count for user. Cycles through repos (default `block/buzz,block/buzz-app`). | GitHub REST API | Optional (for private repos or higher limits) |
 
 ---
 
@@ -46,9 +46,15 @@ make serve-github
 
 Then open `http://localhost:8080` in your browser.
 
+Or serve **all** apps at once with hot reload:
+```bash
+make dev       # Bitcoin :8090, Stocks :8091, GitHub :8092
+make preview   # 8x magnified GIF snapshots in .build/preview/
+```
+
 To test rendering with custom parameters:
 ```bash
-pixlet render apps/stocks/stocks.star ticker=NVDA -o preview.webp
+pixlet render apps/stocks/stocks.star tickers="NVDA,SPY" -o preview.webp
 pixlet render apps/github/github.star repos="owner/repo1,owner/repo2" -o preview.webp
 ```
 

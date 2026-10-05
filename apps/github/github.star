@@ -1,10 +1,14 @@
 """
-Tidbyt GitHub Key Repos App
-Displays status for one or more key GitHub repositories.
-Cycles through repos with an animation if multiple are specified.
+Tidbyt GitHub Repos App
+Shows status for key GitHub repositories, cycling between them:
+  - CI status of a workflow on a branch (last finished run: PASS / FAIL, plus RUN if one is in progress)
+  - Stars, forks, and how many open PRs a given user has in that repo
 Config options:
-  - repos: Comma-separated list of 'owner/repo' (default: 'wesbillman/vibes_ui,tidbyt/pixlet')
-  - github_token: Optional GitHub Personal Access Token (for private repos & 5,000 req/hr rate limit)
+  - repos:        Comma-separated 'owner/repo' list (default: 'block/buzz,block/buzz-app')
+  - github_user:  Whose open PRs to count (default: 'wesbillman')
+  - workflow:     Workflow name to treat as CI (default: 'CI')
+  - branch:       Branch to check CI on (default: 'main')
+  - github_token: Optional PAT (private repos, and 5,000 req/hr instead of 60)
 """
 
 load("render.star", "render")
@@ -12,79 +16,155 @@ load("http.star", "http")
 load("encoding/base64.star", "base64")
 
 # 9x9 pixel GitHub Octocat silhouette
-GH_ICON = "iVBORw0KGgoAAAANSUhEUgAAAAkAAAAJCAYAAADgkQYQAAAANElEQVR4nGNgAIL/QMCABcDF/0MBLkVguf9EABSTsNHEm4SsA6cCdJ+g01h9gtMUbAqRxQG5f79BLSyF1gAAAABJRU5ErkJggg=="
+GH_ICON = "iVBORw0KGgoAAAANSUhEUgAAAAkAAAAJCAYAAADgkQYQAAAANElEQVR4nGNgAIL/QMCABcDF/yMBdAVw8f9EALgiNM0ofOJMQrcfqwJsDsWqAKuP8AFsCgCuT8U7QoYvmAAAAABJRU5ErkJggg=="
 
-DEFAULT_REPOS = "wesbillman/vibes_ui,tidbyt/pixlet"
+# 5x5 pixel metric icons
+STAR_ICON = "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHUlEQVR4nGNggIL/1xn+MyBz0DGGBAO6VhRBdAAAkk0fKM3dXasAAAAASUVORK5CYII="
+FORK_ICON = "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAGUlEQVR4nGNI2frtPwMQoNOYAjCAIUCUIAA8MRhxfZ17BQAAAABJRU5ErkJggg=="
 
-def render_repo_frame(repo_full_name, headers):
-    parts = repo_full_name.strip().split("/")
+DEFAULT_REPOS = "block/buzz,block/buzz-app"
+DEFAULT_USER = "wesbillman"
+DEFAULT_WORKFLOW = "CI"
+DEFAULT_BRANCH = "main"
+
+FRAME_MS = 4000
+
+GREEN = "#00E676"
+RED = "#FF5252"
+YELLOW = "#FFD600"
+GRAY = "#9E9E9E"
+STAR_COLOR = "#FFD700"
+FORK_COLOR = "#64B5F6"
+PR_COLOR = "#B388FF"
+
+FAIL_CONCLUSIONS = ["failure", "timed_out", "startup_failure"]
+IGNORED_CONCLUSIONS = ["cancelled", "skipped", "neutral", "stale"]
+
+def format_count(n):
+    # JSON numbers arrive as floats; show ints, abbreviating >= 1000 (e.g. 2.4k)
+    n = int(n)
+    if n >= 1000:
+        whole = n // 1000
+        tenth = (n % 1000) // 100
+        if whole >= 10 or tenth == 0:
+            return "%dk" % whole
+        return "%d.%dk" % (whole, tenth)
+    return str(n)
+
+def gh_get(url, headers, ttl):
+    return http.get(url, ttl_seconds = ttl, headers = headers)
+
+def fetch_my_prs(repo_list, user, headers):
+    # One search call for all repos -> {"owner/repo": count}
+    counts = {}
+    if not user:
+        return counts
+    q = "is:pr+is:open+author:%s" % user
+    for r in repo_list:
+        q += "+repo:" + r
+    res = gh_get("https://api.github.com/search/issues?per_page=100&q=" + q, headers, 300)
+    if res.status_code != 200:
+        return None
+    for item in res.json().get("items", []):
+        # repository_url: https://api.github.com/repos/owner/repo
+        name = "/".join(item.get("repository_url", "").split("/")[-2:]).lower()
+        counts[name] = counts.get(name, 0) + 1
+    return counts
+
+def fetch_ci(repo_full_name, workflow, branch, headers):
+    # Returns (label, color, running)
+    url = "https://api.github.com/repos/%s/actions/runs?per_page=30&branch=%s" % (repo_full_name, branch)
+    res = gh_get(url, headers, 180)
+    if res.status_code != 200:
+        return "CI ?", GRAY, False
+
+    runs = [
+        r
+        for r in res.json().get("workflow_runs", [])
+        if (r.get("name") or "").lower() == workflow.lower()
+    ]
+    if not runs:
+        return "NO CI", GRAY, False
+
+    running = runs[0].get("status") != "completed"
+
+    for r in runs:
+        if r.get("status") != "completed":
+            continue
+        conclusion = r.get("conclusion") or ""
+        if conclusion in IGNORED_CONCLUSIONS:
+            continue
+        if conclusion == "success":
+            return "CI PASS", GREEN, running
+        if conclusion in FAIL_CONCLUSIONS:
+            return "CI FAIL", RED, running
+        return "CI " + conclusion[:4].upper(), YELLOW, running
+
+    # Nothing finished yet in the recent window
+    return ("CI RUN", YELLOW, False) if running else ("CI ?", GRAY, False)
+
+def message_frame(text, color):
+    return render.Box(
+        width = 64,
+        height = 32,
+        child = render.Text(text, color = color, font = "tom-thumb"),
+    )
+
+def metric(icon_b64, label, value, color):
+    children = []
+    if icon_b64:
+        children.append(render.Image(src = base64.decode(icon_b64)))
+        children.append(render.Box(width = 1, height = 1))
+    if label:
+        children.append(render.Text(label, color = color, font = "tom-thumb"))
+        children.append(render.Box(width = 2, height = 1))
+    children.append(render.Text(value, color = color, font = "tom-thumb"))
+    return render.Row(cross_align = "center", children = children)
+
+def render_repo_frame(repo_full_name, headers, workflow, branch, my_prs):
+    parts = repo_full_name.split("/")
     if len(parts) != 2:
-        return render.Box(
-            child = render.Text("Bad repo name", color = "#ff4444", font = "CG-pixel-3x5-mono"),
-        )
-    owner = parts[0]
+        return message_frame("Bad repo name", RED)
     repo = parts[1]
 
-    # 1. Fetch Repo info
-    repo_url = "https://api.github.com/repos/%s/%s" % (owner, repo)
-    res = http.get(repo_url, ttl_seconds = 120, headers = headers)
-
+    res = gh_get("https://api.github.com/repos/" + repo_full_name, headers, 600)
     if res.status_code == 404:
-        return render.Box(
-            child = render.Text("%s 404" % repo[:8], color = "#ff4444", font = "CG-pixel-3x5-mono"),
-        )
+        return message_frame("%s 404" % repo[:10], RED)
     if res.status_code == 403:
-        return render.Box(
-            child = render.Text("Rate limited", color = "#ffaa00", font = "CG-pixel-3x5-mono"),
-        )
+        return message_frame("Rate limited", YELLOW)
     if res.status_code != 200:
-        return render.Box(
-            child = render.Text("Err %d" % res.status_code, color = "#ff4444", font = "CG-pixel-3x5-mono"),
-        )
+        return message_frame("Err %d" % res.status_code, RED)
 
     data = res.json()
-    stars = data.get("stargazers_count", 0)
-    forks = data.get("forks_count", 0)
-    issues = data.get("open_issues_count", 0)
-    lang = data.get("language") or "Code"
+    stars = format_count(data.get("stargazers_count", 0))
+    forks = format_count(data.get("forks_count", 0))
 
-    # 2. Fetch Latest CI run
-    ci_url = "https://api.github.com/repos/%s/%s/actions/runs?per_page=1" % (owner, repo)
-    ci_res = http.get(ci_url, ttl_seconds = 120, headers = headers)
+    ci_label, ci_color, ci_running = fetch_ci(repo_full_name, workflow, branch, headers)
 
-    ci_status = ""
-    ci_color = "#888888"
-    if ci_res.status_code == 200:
-        runs = ci_res.json().get("workflow_runs", [])
-        if runs:
-            latest = runs[0]
-            conclusion = latest.get("conclusion")
-            status = latest.get("status")
-            if status == "in_progress":
-                ci_status = "CI: RUN"
-                ci_color = "#FFD600"
-            elif conclusion == "success":
-                ci_status = "CI: PASS"
-                ci_color = "#00E676"
-            elif conclusion == "failure":
-                ci_status = "CI: FAIL"
-                ci_color = "#FF5252"
-            elif conclusion:
-                ci_status = "CI: " + conclusion[:4].upper()
-                ci_color = "#FFAA00"
+    if my_prs == None:
+        pr_value = "?"
+    else:
+        pr_value = str(my_prs.get(repo_full_name.lower(), 0))
 
-    # If no CI status, show the primary language
-    if not ci_status:
-        ci_status = lang[:9]
-        ci_color = "#9E9E9E"
+    ci_row = [
+        render.Box(width = 3, height = 3, color = ci_color),
+        render.Box(width = 2, height = 1),
+        render.Text(ci_label, color = ci_color, font = "tom-thumb"),
+    ]
+    if ci_running and ci_label != "CI RUN":
+        ci_row.append(render.Box(width = 3, height = 1))
+        ci_row.append(render.Text("RUN", color = YELLOW, font = "tom-thumb"))
 
     return render.Box(
+        width = 64,
+        height = 32,
         padding = 1,
         child = render.Column(
+            expanded = True,
             cross_align = "start",
             main_align = "space_between",
             children = [
-                # Row 1: Icon + Repo Name (Marquee for long names)
+                # Row 1: Icon + Repo name
                 render.Row(
                     cross_align = "center",
                     children = [
@@ -96,46 +176,17 @@ def render_repo_frame(repo_full_name, headers):
                         ),
                     ],
                 ),
-
-                # Row 2: Status / CI badge
-                render.Row(
-                    expanded = True,
-                    main_align = "start",
-                    cross_align = "center",
-                    children = [
-                        render.Box(width = 3, height = 3, color = ci_color),
-                        render.Box(width = 2, height = 1),
-                        render.Text(ci_status, color = ci_color, font = "CG-pixel-3x5-mono"),
-                    ],
-                ),
-
-                # Row 3: Metrics (Stars, Forks, Issues)
+                # Row 2: CI status on branch
+                render.Row(cross_align = "center", children = ci_row),
+                # Row 3: Stars, forks, my open PRs
                 render.Row(
                     expanded = True,
                     main_align = "space_between",
                     cross_align = "center",
                     children = [
-                        render.Row(
-                            cross_align = "center",
-                            children = [
-                                render.Text("*", color = "#FFD700", font = "CG-pixel-3x5-mono"),
-                                render.Text(str(stars), color = "#FFD700", font = "CG-pixel-3x5-mono"),
-                            ],
-                        ),
-                        render.Row(
-                            cross_align = "center",
-                            children = [
-                                render.Text("Y", color = "#64B5F6", font = "CG-pixel-3x5-mono"),
-                                render.Text(str(forks), color = "#64B5F6", font = "CG-pixel-3x5-mono"),
-                            ],
-                        ),
-                        render.Row(
-                            cross_align = "center",
-                            children = [
-                                render.Text("!", color = "#FF8A80", font = "CG-pixel-3x5-mono"),
-                                render.Text(str(issues), color = "#FF8A80", font = "CG-pixel-3x5-mono"),
-                            ],
-                        ),
+                        metric(STAR_ICON, "", stars, STAR_COLOR),
+                        metric(FORK_ICON, "", forks, FORK_COLOR),
+                        metric(None, "PR", pr_value, PR_COLOR),
                     ],
                 ),
             ],
@@ -143,36 +194,30 @@ def render_repo_frame(repo_full_name, headers):
     )
 
 def main(config):
-    repos_str = config.get("repos", DEFAULT_REPOS)
+    repos_str = config.get("repos") or DEFAULT_REPOS
+    user = config.get("github_user") or DEFAULT_USER
+    workflow = config.get("workflow") or DEFAULT_WORKFLOW
+    branch = config.get("branch") or DEFAULT_BRANCH
     token = config.get("github_token", "")
 
     headers = {
         "User-Agent": "Tidbyt-GitHub-App",
-        "Accept": "application/vnd.github.v3+json",
+        "Accept": "application/vnd.github+json",
     }
     if token:
         headers["Authorization"] = "Bearer " + token
 
     repo_list = [r.strip() for r in repos_str.split(",") if r.strip()]
     if not repo_list:
-        return render.Root(
-            child = render.Box(child = render.Text("No repos configured", color = "#FF5252", font = "CG-pixel-3x5-mono")),
-        )
+        return render.Root(child = message_frame("No repos configured", RED))
 
-    # If only 1 repo, return a static screen
-    if len(repo_list) == 1:
-        return render.Root(
-            child = render_repo_frame(repo_list[0], headers),
-        )
+    my_prs = fetch_my_prs(repo_list, user, headers)
+    frames = [render_repo_frame(r, headers, workflow, branch, my_prs) for r in repo_list]
 
-    # For multiple repos, cycle with animation frames (3.5 seconds each)
-    frames = []
-    for r in repo_list:
-        frames.append(render_repo_frame(r, headers))
+    if len(frames) == 1:
+        return render.Root(child = frames[0])
 
     return render.Root(
-        delay = 3500,
-        child = render.Animation(
-            children = frames,
-        ),
+        delay = FRAME_MS,
+        child = render.Animation(children = frames),
     )

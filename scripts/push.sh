@@ -50,17 +50,17 @@ case "$APP" in
     ;;
   stocks|stock)
     check_tidbyt_env
-    TICKER="${STOCK_TICKER:-AAPL}"
-    push_app "stocks" "ticker=$TICKER"
+    TICKERS="${STOCK_TICKERS:-${STOCK_TICKER:-COMP,XYZ}}"
+    push_app "stocks" "tickers=$TICKERS"
     ;;
   github|gh)
     check_tidbyt_env
-    REPOS="${GITHUB_REPOS:-wesbillman/vibes_ui,tidbyt/pixlet}"
-    TOKEN_ARG=""
+    REPOS="${GITHUB_REPOS:-block/buzz,block/buzz-app}"
+    ARGS=("repos=$REPOS" "github_user=${GITHUB_USER:-wesbillman}" "branch=${GITHUB_BRANCH:-main}" "workflow=${GITHUB_WORKFLOW:-CI}")
     if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-      TOKEN_ARG="github_token=$GITHUB_TOKEN"
+      ARGS+=("github_token=$GITHUB_TOKEN")
     fi
-    push_app "github" "repos=$REPOS" $TOKEN_ARG
+    push_app "github" "${ARGS[@]}"
     ;;
   all)
     check_tidbyt_env
