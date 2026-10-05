@@ -14,6 +14,7 @@ Designed to be hosted safely in a **public repository** with zero secrets commit
 | **Stocks** (`apps/stocks/`) | Price, daily $/% change, and intraday line chart vs. previous close. Cycles through multiple tickers (default `COMP,XYZ`) | Yahoo Finance | ❌ None |
 | **GitHub Repos** (`apps/github/`) | Status dashboard for key repos: CI pass/fail on `main`, stars, forks, and open PR count for user. Cycles through repos (default `block/buzz,block/buzz-app`). | GitHub REST API | Optional (for private repos or higher limits) |
 | **Buzz** (`apps/buzz/`) | Animated Buzz bee mark with hovering flutter, `buzz.xyz` branding, and cycling taglines (chartreuse or dark theme) | Static / Branded | ❌ None |
+| **Weather & Wind** (`apps/weather/`) | Lake Havasu City live weather & wind conditions: temp, day/night condition icon, high/low, wind speed & gusts, and 8-directional compass flow arrow | Open-Meteo API | ❌ None |
 
 ---
 
@@ -35,21 +36,19 @@ All sensitive credentials (Tidbyt API key, device ID, GitHub Personal Access Tok
 You can preview any app in your web browser with hot reloading:
 
 ```bash
-# Preview Bitcoin screen
+# Preview individual screens
 make serve-btc
-
-# Preview Stocks screen
 make serve-stocks
-
-# Preview GitHub key repos screen
 make serve-github
+make serve-buzz
+make serve-weather
 ```
 
-Then open `http://localhost:8080` in your browser.
+Then open `http://localhost:8080` (or the configured port) in your browser.
 
 Or serve **all** apps at once with hot reload:
 ```bash
-make dev       # Bitcoin :8090, Stocks :8091, GitHub :8092
+make dev       # Bitcoin :8090, Stocks :8091, GitHub :8092, Buzz :8093, Weather :8094
 make preview   # 8x magnified GIF snapshots in .build/preview/
 ```
 
@@ -57,6 +56,7 @@ To test rendering with custom parameters:
 ```bash
 pixlet render apps/stocks/stocks.star tickers="NVDA,SPY" -o preview.webp
 pixlet render apps/github/github.star repos="owner/repo1,owner/repo2" -o preview.webp
+pixlet render apps/weather/weather.star -o preview.webp
 ```
 
 ---
@@ -70,12 +70,14 @@ Once your `.env` file is configured:
 make push-btc
 make push-stocks
 make push-github
+make push-buzz
+make push-weather
 
 # Push all screens to your device rotation
 make push-all
 ```
 
-*Note: Each screen is assigned an installation ID (`custom-bitcoin`, `custom-stocks`, `custom-github`), which keeps them in your Tidbyt's regular rotation alongside your other apps.*
+*Note: Each screen is assigned an alphanumeric installation ID (`custombitcoin`, `customstocks`, `customgithub`, `custombuzz`, `customweather`), keeping them seamlessly in your Tidbyt's regular rotation alongside your other apps.*
 
 ---
 
