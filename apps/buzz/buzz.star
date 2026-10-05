@@ -1,30 +1,36 @@
 """
 Tidbyt Buzz App
-Displays "Buzz" centered on the iconic yellow/chartreuse background (#D7D72E)
-with lively little bees buzzing and flying around it.
-Inspired by https://buzz.xyz/.
+Displays uppercase "BUZZ" in the center matching the buzz.xyz Cash Sans font,
+with mini bees styled after the official buzz.xyz bee logo buzzing around it
+on the signature yellow background (#D7D72E).
 """
 
 load("render.star", "render")
 load("encoding/base64.star", "base64")
 load("math.star", "math")
 
-# Little bee sprites (6x4) with flapping white wings and ink body
-BEE_UP_R = "iVBORw0KGgoAAAANSUhEUgAAAAYAAAAECAYAAACtBE5DAAAAHklEQVR42mNggIL/QIBMg4GynNx/EEZhwxgYErgAAOxLFEfkiQziAAAAAElFTkSuQmCC"
-BEE_UP_L = "iVBORw0KGgoAAAANSUhEUgAAAAYAAAAECAYAAACtBE5DAAAAHklEQVR42mNgAIL/QIBMg4GynNx/EEZnY5WAS2IDAByiFEcpoYIaAAAAAElFTkSuQmCC"
-BEE_DOWN_R = "iVBORw0KGgoAAAANSUhEUgAAAAYAAAAECAYAAACtBE5DAAAAHUlEQVR42mNgwAeU5eT+gzAKG8bAkICB/0CATAMAloUUR4bEPiYAAAAASUVORK5CYII="
-BEE_DOWN_L = "iVBORw0KGgoAAAANSUhEUgAAAAYAAAAECAYAAACtBE5DAAAAHUlEQVR42mNgwAWU5eT+gzA6G6sEXPI/ECDTIAAAxs0UR3+vGngAAAAASUVORK5CYII="
+# Exact Cash Sans Bold "BUZZ" wordmark (32x9)
+BUZZ_WORDMARK = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAJCAYAAABT2S4KAAAAVElEQVR42mNQlpP7jw0zQAE6H5sYLjNgavDKE6uZ5g7AZQExDsAmR7Q8NaKAWDms8tR0AMmWE2MBsQ4gOeip6QCyLac4BROQJwYTTAO4LCHGA8RgALjv8KE8rcX9AAAAAElFTkSuQmCC"
+
+# Mini bees (11x7) matching the official buzz.xyz geometric bee mark
+MINI_BEE_MID = "iVBORw0KGgoAAAANSUhEUgAAAAsAAAAHCAYAAADebrddAAAAK0lEQVR42mNgQAPKcnL/YZgBH4ApQKdxmoYLY1WIzxDSTMbmZlx8BlJCAwBtrzKXXu7hogAAAABJRU5ErkJggg=="
+MINI_BEE_UP = "iVBORw0KGgoAAAANSUhEUgAAAAsAAAAHCAYAAADebrddAAAALUlEQVR42mNgQAPKcnL/YZgBG0BXgEyjaEQWIITxWo3XSThNw+V2fHwGUkIDAMswMpcSLP55AAAAAElFTkSuQmCC"
+MINI_BEE_DOWN = "iVBORw0KGgoAAAANSUhEUgAAAAsAAAAHCAYAAADebrddAAAAKklEQVR42mNgQAPKcnL/YZgBH4ApQKdxKkbHDMRajSGOzTRcmDSTSQkNABAuMpdCbIh3AAAAAElFTkSuQmCC"
 
 CHARTREUSE = "#D7D72E"
-INK = "#231E1E"
 
-NUM_FRAMES = 40
-FRAME_DELAY_MS = 80
+NUM_FRAMES = 36
+FRAME_DELAY_MS = 90
 
-def get_bee_sprite(wing_up, facing_right):
-    if wing_up:
-        return BEE_UP_R if facing_right else BEE_UP_L
-    return BEE_DOWN_R if facing_right else BEE_DOWN_L
+def get_bee_sprite(wing_stage):
+    if wing_stage == 0:
+        return MINI_BEE_MID
+    elif wing_stage == 1:
+        return MINI_BEE_UP
+    elif wing_stage == 2:
+        return MINI_BEE_MID
+    else:
+        return MINI_BEE_DOWN
 
 def main(config):
     frames = []
@@ -32,61 +38,49 @@ def main(config):
     for i in range(NUM_FRAMES):
         t = (2.0 * math.pi * i) / NUM_FRAMES
 
-        # Bee 1: Oval perimeter loop around "Buzz"
-        # Clockwise orbit: x = 29 + 25*cos(t), y = 14 + 11*sin(t)
-        x1 = int(math.round(29.0 + 25.0 * math.cos(t)))
-        y1 = int(math.round(14.0 + 11.0 * math.sin(t)))
-        dx1 = -math.sin(t)
-        facing1 = (dx1 >= 0)
-        wing1 = (i % 2 == 0)
+        # Bee 1: Clockwise perimeter loop around "BUZZ"
+        x1 = int(math.round(27.0 + 24.0 * math.cos(t)))
+        y1 = int(math.round(12.0 + 10.0 * math.sin(t)))
+        w1 = i % 4
 
-        # Bee 2: Figure-8 infinity flight path
-        # x = 29 + 23*sin(t), y = 14 + 10*sin(2t)
-        x2 = int(math.round(29.0 + 23.0 * math.sin(t)))
-        y2 = int(math.round(14.0 + 10.0 * math.sin(2.0 * t)))
-        dx2 = math.cos(t)
-        facing2 = (dx2 >= 0)
-        wing2 = (i % 2 == 1)
+        # Bee 2: Counter-clockwise loop offset by 180 degrees (opposite side)
+        t2 = -t + math.pi
+        x2 = int(math.round(27.0 + 24.0 * math.cos(t2)))
+        y2 = int(math.round(12.0 + 10.0 * math.sin(t2)))
+        w2 = (i + 2) % 4
 
-        # Bee 3: Fast-darting bee on diagonal swoops
-        t3 = 2.0 * t
-        x3 = int(math.round(29.0 + 26.0 * math.cos(t3)))
-        y3 = int(math.round(14.0 + 9.0 * math.sin(t3 + (math.pi / 3.0))))
-        dx3 = -math.sin(t3)
-        facing3 = (dx3 >= 0)
-        wing3 = ((i + 1) % 2 == 0)
+        # Bee 3: Playful wavy loop across top and bottom
+        t3 = t + (math.pi / 2.0)
+        x3 = int(math.round(27.0 + 25.0 * math.sin(t3)))
+        y3 = int(math.round(12.0 + 10.5 * math.cos(t3)))
+        w3 = (i + 1) % 4
 
         stack_children = [
-            # 1. Solid Yellow/Chartreuse Background
+            # 1. Signature Yellow Background
             render.Box(width = 64, height = 32, color = CHARTREUSE),
 
-            # 2. Bold "Buzz" in the exact center
-            render.Box(
-                width = 64,
-                height = 32,
-                child = render.Text(
-                    "Buzz",
-                    color = INK,
-                    font = "10x20",
-                ),
+            # 2. Centered Cash Sans "BUZZ" Wordmark (32x9, centered at x=16, y=11)
+            render.Padding(
+                pad = (16, 11, 0, 0),
+                child = render.Image(src = base64.decode(BUZZ_WORDMARK)),
             ),
 
-            # 3. Flying Bee 1
+            # 3. Flying Mini Bee 1
             render.Padding(
                 pad = (x1, y1, 0, 0),
-                child = render.Image(src = base64.decode(get_bee_sprite(wing1, facing1))),
+                child = render.Image(src = base64.decode(get_bee_sprite(w1))),
             ),
 
-            # 4. Flying Bee 2
+            # 4. Flying Mini Bee 2
             render.Padding(
                 pad = (x2, y2, 0, 0),
-                child = render.Image(src = base64.decode(get_bee_sprite(wing2, facing2))),
+                child = render.Image(src = base64.decode(get_bee_sprite(w2))),
             ),
 
-            # 5. Flying Bee 3
+            # 5. Flying Mini Bee 3
             render.Padding(
                 pad = (x3, y3, 0, 0),
-                child = render.Image(src = base64.decode(get_bee_sprite(wing3, facing3))),
+                child = render.Image(src = base64.decode(get_bee_sprite(w3))),
             ),
         ]
 
