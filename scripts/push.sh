@@ -63,16 +63,21 @@ case "$APP" in
     fi
     push_app "github" "${ARGS[@]}"
     ;;
+  buzz)
+    check_tidbyt_env
+    push_app "buzz" "theme=${BUZZ_THEME:-chartreuse}"
+    ;;
   all)
     check_tidbyt_env
     echo "=== Pushing all apps to Tidbyt ==="
     "$0" bitcoin
     "$0" stocks
     "$0" github
+    "$0" buzz
     echo "🎉 All apps pushed to device rotation!"
     ;;
   *)
-    echo "Usage: $0 [bitcoin|stocks|github|all]"
+    echo "Usage: $0 [bitcoin|stocks|github|buzz|all]"
     exit 1
     ;;
 esac

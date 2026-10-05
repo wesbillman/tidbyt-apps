@@ -13,6 +13,7 @@ Designed to be hosted safely in a **public repository** with zero secrets commit
 | **Bitcoin** (`apps/bitcoin/`) | Live BTC/USD price with trend charts, cycling between 24H and 30D (`period=24H` or `30D` to pin one) | Coinbase API | ❌ None |
 | **Stocks** (`apps/stocks/`) | Price, daily $/% change, and intraday line chart vs. previous close. Cycles through multiple tickers (default `COMP,XYZ`) | Yahoo Finance | ❌ None |
 | **GitHub Repos** (`apps/github/`) | Status dashboard for key repos: CI pass/fail on `main`, stars, forks, and open PR count for user. Cycles through repos (default `block/buzz,block/buzz-app`). | GitHub REST API | Optional (for private repos or higher limits) |
+| **Buzz** (`apps/buzz/`) | Animated Buzz bee mark with hovering flutter, `buzz.xyz` branding, and cycling taglines (chartreuse or dark theme) | Static / Branded | ❌ None |
 
 ---
 
