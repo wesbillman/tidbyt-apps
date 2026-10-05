@@ -28,7 +28,8 @@ push_app() {
   local app_name="$1"
   local star_file="$REPO_ROOT/apps/$app_name/$app_name.star"
   local output_webp="$TMP_DIR/$app_name.webp"
-  local installation_id="custom-$app_name"
+  local clean_name="$(echo "$app_name" | tr -cd '[:alnum:]')"
+  local installation_id="custom${clean_name}"
   shift
 
   echo "🔨 Rendering $app_name..."
