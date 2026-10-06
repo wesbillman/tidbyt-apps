@@ -73,16 +73,51 @@ def fetch_my_prs(repo_list, user, headers):
 
 def fetch_ci(repo_full_name, workflow, branch, headers):
     # Returns (label, color, running)
-    url = "https://api.github.com/repos/%s/actions/runs?per_page=30&branch=%s" % (repo_full_name, branch)
-    res = gh_get(url, headers, 180)
-    if res.status_code != 200:
-        return "CI ?", GRAY, False
+    runs = []
+    wf_lower = workflow.lower()
 
-    runs = [
-        r
-        for r in res.json().get("workflow_runs", [])
-        if (r.get("name") or "").lower() == workflow.lower()
-    ]
+    # 1. Try querying workflow file directly (e.g. ci.yml)
+    candidates = []
+    if wf_lower == "ci":
+        candidates.append("ci.yml")
+    elif wf_lower.endswith(".yml") or wf_lower.endswith(".yaml"):
+        candidates.append(workflow)
+    else:
+        candidates.append(wf_lower + ".yml")
+
+    for cand in candidates:
+        url = "https://api.github.com/repos/%s/actions/workflows/%s/runs?per_page=10&branch=%s" % (repo_full_name, cand, branch)
+        res = gh_get(url, headers, 180)
+        if res.status_code == 200:
+            runs = res.json().get("workflow_runs", [])
+            if runs:
+                break
+
+    # 2. If not found by file, list repository workflows to match by display name
+    if not runs:
+        wf_list_res = gh_get("https://api.github.com/repos/%s/actions/workflows" % repo_full_name, headers, 600)
+        if wf_list_res.status_code == 200:
+            for w in wf_list_res.json().get("workflows", []):
+                if (w.get("name") or "").lower() == wf_lower:
+                    wf_id = w.get("id")
+                    if wf_id:
+                        runs_res = gh_get("https://api.github.com/repos/%s/actions/workflows/%s/runs?per_page=10&branch=%s" % (repo_full_name, str(wf_id), branch), headers, 180)
+                        if runs_res.status_code == 200:
+                            runs = runs_res.json().get("workflow_runs", [])
+                            if runs:
+                                break
+
+    # 3. Fallback to general repo runs list if still nothing
+    if not runs:
+        url = "https://api.github.com/repos/%s/actions/runs?per_page=30&branch=%s" % (repo_full_name, branch)
+        res = gh_get(url, headers, 180)
+        if res.status_code == 200:
+            runs = [
+                r
+                for r in res.json().get("workflow_runs", [])
+                if (r.get("name") or "").lower() == wf_lower
+            ]
+
     if not runs:
         return "NO CI", GRAY, False
 
