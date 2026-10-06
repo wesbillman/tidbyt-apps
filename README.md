@@ -81,15 +81,25 @@ make push-all
 
 ---
 
-## ⏰ Automated Updates (macOS Cron / Launchd)
+## ⏰ Automated Updates (24/7 via GitHub Actions)
 
-To keep your Tidbyt screens continuously updated with fresh data, you can set up a recurring cron job on your Mac:
+Tidbyt custom apps are automatically rendered and pushed to your device every **10 minutes** using the included GitHub Actions workflow ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)):
 
+- **Runs 24/7 in the Cloud**: No need to keep your Mac awake or run a local server.
+- **Immediate Deploy on Git Push**: Any changes pushed to `main` instantly trigger an update to your Tidbyt.
+- **Manual Trigger**: You can trigger a run at any time from the **Actions** tab on GitHub via "Run workflow".
+
+### Secrets Configuration
+The workflow requires two GitHub Actions secrets (already configured):
+- `TIDBYT_DEVICE_ID`: Your Tidbyt device identifier
+- `TIDBYT_API_TOKEN`: Your Tidbyt developer API token
+
+### Alternative: Local macOS Cron
+If you ever want to run updates locally instead:
 ```bash
 crontab -e
 ```
-
-Add an entry to update your screens every 10 minutes:
+Add:
 ```bash
 */10 * * * * cd /Users/wesbillman/dev/tidbyt-apps && ./scripts/push.sh all >/dev/null 2>&1
 ```
