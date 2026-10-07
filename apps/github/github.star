@@ -52,7 +52,12 @@ def format_count(n):
     return str(n)
 
 def gh_get(url, headers, ttl):
-    return http.get(url, ttl_seconds = ttl, headers = headers)
+    res = http.get(url, ttl_seconds = ttl, headers = headers)
+    # If authenticated request fails due to SAML enforcement (403) or token mismatch (401),
+    # fallback to unauthenticated request so public repos still succeed.
+    if (res.status_code == 401 or res.status_code == 403) and headers:
+        return http.get(url, ttl_seconds = ttl)
+    return res
 
 def fetch_my_prs(repo_list, user, headers):
     # One search call for all repos -> {"owner/repo": count}
@@ -76,7 +81,7 @@ def fetch_ci(repo_full_name, workflow, branch, headers):
     runs = []
     wf_lower = workflow.lower()
 
-    # 1. Try querying workflow file directly (e.g. ci.yml)
+    # 1. Target specific workflow file directly (e.g. ci.yml)
     candidates = []
     if wf_lower == "ci":
         candidates.append("ci.yml")
@@ -93,7 +98,7 @@ def fetch_ci(repo_full_name, workflow, branch, headers):
             if runs:
                 break
 
-    # 2. If not found by file, list repository workflows to match by display name
+    # 2. Match by workflow display name in repo workflows
     if not runs:
         wf_list_res = gh_get("https://api.github.com/repos/%s/actions/workflows" % repo_full_name, headers, 600)
         if wf_list_res.status_code == 200:
@@ -107,36 +112,38 @@ def fetch_ci(repo_full_name, workflow, branch, headers):
                             if runs:
                                 break
 
-    # 3. Fallback to general repo runs list if still nothing
+    # 3. Fallback: recent runs on this branch across all workflows
     if not runs:
         url = "https://api.github.com/repos/%s/actions/runs?per_page=30&branch=%s" % (repo_full_name, branch)
         res = gh_get(url, headers, 180)
         if res.status_code == 200:
-            runs = [
-                r
-                for r in res.json().get("workflow_runs", [])
-                if (r.get("name") or "").lower() == wf_lower
-            ]
+            all_runs = res.json().get("workflow_runs", [])
+            named_runs = [r for r in all_runs if (r.get("name") or "").lower() == wf_lower]
+            runs = named_runs if named_runs else all_runs
+
+    # 4. Ultimate fallback: latest runs across the entire repository
+    if not runs:
+        url = "https://api.github.com/repos/%s/actions/runs?per_page=10" % repo_full_name
+        res = gh_get(url, headers, 180)
+        if res.status_code == 200:
+            runs = res.json().get("workflow_runs", [])
 
     if not runs:
-        return "NO CI", GRAY, False
+        return "CI FAIL", RED, False
 
     running = runs[0].get("status") != "completed"
 
+    # Find the most recent completed run and return PASS or FAIL
     for r in runs:
         if r.get("status") != "completed":
             continue
         conclusion = r.get("conclusion") or ""
-        if conclusion in IGNORED_CONCLUSIONS:
-            continue
         if conclusion == "success":
             return "CI PASS", GREEN, running
-        if conclusion in FAIL_CONCLUSIONS:
-            return "CI FAIL", RED, running
-        return "CI " + conclusion[:4].upper(), YELLOW, running
+        return "CI FAIL", RED, running
 
-    # Nothing finished yet in the recent window
-    return ("CI RUN", YELLOW, False) if running else ("CI ?", GRAY, False)
+    # If all recent runs are in progress and none has completed yet
+    return "CI RUN", YELLOW, True
 
 def message_frame(text, color):
     return render.Box(
