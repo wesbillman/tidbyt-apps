@@ -24,6 +24,24 @@ check_tidbyt_env() {
   fi
 }
 
+retry() {
+  local max_attempts=3
+  local delay=5
+  local attempt=1
+  while true; do
+    if "$@"; then
+      return 0
+    fi
+    if (( attempt >= max_attempts )); then
+      return 1
+    fi
+    echo "⚠️  Attempt $attempt/$max_attempts failed; retrying in ${delay}s..." >&2
+    sleep "$delay"
+    ((attempt++))
+    ((delay *= 2))
+  done
+}
+
 push_app() {
   local app_name="$1"
   local star_file="$REPO_ROOT/apps/$app_name/$app_name.star"
@@ -33,10 +51,10 @@ push_app() {
   shift
 
   echo "🔨 Rendering $app_name..."
-  pixlet render "$star_file" "$@" -o "$output_webp"
+  retry pixlet render "$star_file" "$@" -o "$output_webp"
 
   echo "🚀 Pushing $app_name to Tidbyt device ($TIDBYT_DEVICE_ID)..."
-  pixlet push "$TIDBYT_DEVICE_ID" "$output_webp" \
+  retry pixlet push "$TIDBYT_DEVICE_ID" "$output_webp" \
     --api-token "$TIDBYT_API_TOKEN" \
     --installation-id "$installation_id" \
     --background
@@ -74,12 +92,23 @@ case "$APP" in
   all)
     check_tidbyt_env
     echo "=== Pushing all apps to Tidbyt ==="
-    "$0" bitcoin
-    "$0" stocks
-    "$0" github
-    "$0" buzz
-    "$0" weather
-    echo "🎉 All apps pushed to device rotation!"
+    apps=(bitcoin stocks github buzz weather)
+    failed_apps=()
+    for app in "${apps[@]}"; do
+      if ! "$0" "$app"; then
+        echo "::warning::Failed to render/push $app after retries"
+        failed_apps+=("$app")
+      fi
+    done
+
+    if (( ${#failed_apps[@]} == ${#apps[@]} )); then
+      echo "❌ All apps failed to push!"
+      exit 1
+    elif (( ${#failed_apps[@]} > 0 )); then
+      echo "⚠️  Completed with partial failures (${failed_apps[*]}); remaining apps updated."
+    else
+      echo "🎉 All apps pushed to device rotation!"
+    fi
     ;;
   *)
     echo "Usage: $0 [bitcoin|stocks|github|buzz|weather|all]"
